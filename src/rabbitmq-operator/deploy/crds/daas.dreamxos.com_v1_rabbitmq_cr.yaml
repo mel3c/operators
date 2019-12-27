@@ -1,0 +1,7 @@
+apiVersion: daas.dreamxos.com/v1
+kind: Rabbitmq
+metadata:
+  name: example-rabbitmq
+spec:
+  # Add fields here
+  size: 3

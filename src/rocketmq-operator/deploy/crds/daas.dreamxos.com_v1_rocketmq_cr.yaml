@@ -1,0 +1,7 @@
+apiVersion: daas.dreamxos.com/v1
+kind: Rocketmq
+metadata:
+  name: example-rocketmq
+spec:
+  # Add fields here
+  size: 3

@@ -1,0 +1,7 @@
+apiVersion: daas.dreamxos.com/v1
+kind: Mysql
+metadata:
+  name: example-mysql
+spec:
+  # Add fields here
+  size: 3
