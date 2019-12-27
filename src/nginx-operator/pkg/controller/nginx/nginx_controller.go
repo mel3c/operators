@@ -2,14 +2,15 @@ package nginx
 
 import (
 	"context"
+	"reflect"
 
 	daasv1 "nginx-operator/pkg/apis/daas/v1"
+	"nginx-operator/pkg/common"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -47,18 +48,17 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	}
 
 	// Watch for changes to primary resource Nginx
-	err = c.Watch(&source.Kind{Type: &daasv1.Nginx{}}, &handler.EnqueueRequestForObject{})
-	if err != nil {
+	if err = c.Watch(&source.Kind{Type: &daasv1.Nginx{}}, &handler.EnqueueRequestForObject{}); err != nil {
 		return err
 	}
 
-	// TODO(user): Modify this to be the types you create that are owned by the primary resource
 	// Watch for changes to secondary resource Pods and requeue the owner Nginx
-	err = c.Watch(&source.Kind{Type: &corev1.Pod{}}, &handler.EnqueueRequestForOwner{
-		IsController: true,
-		OwnerType:    &daasv1.Nginx{},
-	})
-	if err != nil {
+	if err = c.Watch(&source.Kind{Type: &appsv1.Deployment{}}, &handler.EnqueueRequestForOwner{IsController: true, OwnerType: &daasv1.Nginx{}}); err != nil {
+		return err
+	}
+
+	// Watch for changes to secondary resource Pods and requeue the owner Nginx
+	if err = c.Watch(&source.Kind{Type: &corev1.Service{}}, &handler.EnqueueRequestForOwner{IsController: true, OwnerType: &daasv1.Nginx{}}); err != nil {
 		return err
 	}
 
@@ -78,8 +78,6 @@ type ReconcileNginx struct {
 
 // Reconcile reads that state of the cluster for a Nginx object and makes changes based on the state read
 // and what is in the Nginx.Spec
-// TODO(user): Modify this Reconcile function to implement your Controller logic.  This example creates
-// a Pod as an example
 // Note:
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
@@ -89,8 +87,7 @@ func (r *ReconcileNginx) Reconcile(request reconcile.Request) (reconcile.Result,
 
 	// Fetch the Nginx instance
 	instance := &daasv1.Nginx{}
-	err := r.client.Get(context.TODO(), request.NamespacedName, instance)
-	if err != nil {
+	if err := r.client.Get(context.TODO(), request.NamespacedName, instance); err != nil || instance.DeletionTimestamp != nil {
 		if errors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
@@ -101,54 +98,47 @@ func (r *ReconcileNginx) Reconcile(request reconcile.Request) (reconcile.Result,
 		return reconcile.Result{}, err
 	}
 
-	// Define a new Pod object
-	pod := newPodForCR(instance)
-
-	// Set Nginx instance as the owner and controller
-	if err := controllerutil.SetControllerReference(instance, pod, r.scheme); err != nil {
-		return reconcile.Result{}, err
-	}
-
-	// Check if this Pod already exists
-	found := &corev1.Pod{}
-	err = r.client.Get(context.TODO(), types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, found)
-	if err != nil && errors.IsNotFound(err) {
-		reqLogger.Info("Creating a new Pod", "Pod.Namespace", pod.Namespace, "Pod.Name", pod.Name)
-		err = r.client.Create(context.TODO(), pod)
-		if err != nil {
+	// Install Deployment
+	foundDeploy := &appsv1.Deployment{}
+	currentDeploy := common.NewDeploymentForCR(instance)
+	if err := r.client.Get(context.TODO(), request.NamespacedName, foundDeploy); err != nil {
+		if errors.IsNotFound(err) {
+			if err := controllerutil.SetControllerReference(instance, currentDeploy, r.scheme); err != nil {
+				return reconcile.Result{}, err
+			}
+			if err := r.client.Create(context.TODO(), currentDeploy); err != nil {
+				return reconcile.Result{}, err
+			}
+		} else {
 			return reconcile.Result{}, err
 		}
-
-		// Pod created successfully - don't requeue
-		return reconcile.Result{}, nil
-	} else if err != nil {
-		return reconcile.Result{}, err
+	} else {
+		if !reflect.DeepEqual(foundDeploy.Spec, currentDeploy.Spec) {
+			foundDeploy.Spec = *currentDeploy.Spec.DeepCopy()
+			if err := r.client.Update(context.TODO(), foundDeploy); err != nil {
+				return reconcile.Result{}, err
+			}
+		}
 	}
 
-	// Pod already exists - don't requeue
-	reqLogger.Info("Skip reconcile: Pod already exists", "Pod.Namespace", found.Namespace, "Pod.Name", found.Name)
+	// Install Service
+	foundService := &corev1.Service{}
+	currentService := common.NewServiceForCR(instance)
+	if err := r.client.Get(context.TODO(), request.NamespacedName, foundService); err != nil {
+		if err := controllerutil.SetControllerReference(instance, currentService, r.scheme); err != nil {
+			return reconcile.Result{}, err
+		}
+		if err := r.client.Create(context.TODO(), currentService); err != nil {
+			return reconcile.Result{}, err
+		}
+	} else {
+		if !reflect.DeepEqual(foundService.Spec, currentService.Spec) {
+			foundService.Spec.Ports = currentService.Spec.Ports
+			if err := r.client.Update(context.TODO(), foundService); err != nil {
+				return reconcile.Result{}, err
+			}
+		}
+	}
+
 	return reconcile.Result{}, nil
-}
-
-// newPodForCR returns a busybox pod with the same name/namespace as the cr
-func newPodForCR(cr *daasv1.Nginx) *corev1.Pod {
-	labels := map[string]string{
-		"app": cr.Name,
-	}
-	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name + "-pod",
-			Namespace: cr.Namespace,
-			Labels:    labels,
-		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{
-					Name:    "busybox",
-					Image:   "busybox",
-					Command: []string{"sleep", "3600"},
-				},
-			},
-		},
-	}
 }
