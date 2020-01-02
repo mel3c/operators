@@ -11,6 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -53,12 +54,12 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	}
 
 	// Watch for changes to secondary resource Pods and requeue the owner Nginx
-	if err = c.Watch(&source.Kind{Type: &appsv1.Deployment{}}, &handler.EnqueueRequestForOwner{IsController: true, OwnerType: &daasv1.Nginx{}}); err != nil {
+	if err = watchResource(c, &appsv1.Deployment{}); err != nil {
 		return err
 	}
 
 	// Watch for changes to secondary resource Pods and requeue the owner Nginx
-	if err = c.Watch(&source.Kind{Type: &corev1.Service{}}, &handler.EnqueueRequestForOwner{IsController: true, OwnerType: &daasv1.Nginx{}}); err != nil {
+	if err = watchResource(c, &corev1.Service{}); err != nil {
 		return err
 	}
 
@@ -72,8 +73,16 @@ var _ reconcile.Reconciler = &ReconcileNginx{}
 type ReconcileNginx struct {
 	// This client, initialized using mgr.Client() above, is a split client
 	// that reads objects from the cache and writes to the apiserver
-	client client.Client
-	scheme *runtime.Scheme
+	client   client.Client
+	scheme   *runtime.Scheme
+	recorder record.EventRecorder
+}
+
+func watchResource(c controller.Controller, resource runtime.Object) error {
+	return c.Watch(&source.Kind{Type: resource}, &handler.EnqueueRequestForOwner{
+		IsController: true,
+		OwnerType:    &daasv1.Nginx{},
+	})
 }
 
 // Reconcile reads that state of the cluster for a Nginx object and makes changes based on the state read
@@ -115,7 +124,7 @@ func (r *ReconcileNginx) Reconcile(request reconcile.Request) (reconcile.Result,
 	} else {
 		if !reflect.DeepEqual(foundDeploy.Spec, currentDeploy.Spec) {
 			foundDeploy.Spec = *currentDeploy.Spec.DeepCopy()
-			if err := r.client.Update(context.TODO(), foundDeploy); err != nil {
+			if err := r.client.Update(context.TODO(), foundDeploy); err != nil && !errors.IsConflict(err) {
 				return reconcile.Result{}, err
 			}
 		}

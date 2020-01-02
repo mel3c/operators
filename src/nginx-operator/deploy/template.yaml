@@ -1,0 +1,66 @@
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  name: nginxes.daas.dreamxos.com
+spec:
+  group: daas.dreamxos.com
+  version: v1
+  scope: Namespaced
+  names:
+    kind: Nginx
+    listKind: NginxList
+    plural: nginxes
+    singular: nginx
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nginx-operator
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: nginx-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: nginx-operator
+  namespace: kube-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-operator
+  namespace: kube-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: nginx-operator
+  template:
+    metadata:
+      labels:
+        name: nginx-operator
+    spec:
+      serviceAccountName: nginx-operator
+      containers:
+        - name: nginx-operator
+          image: gaozhenhai/nginx-operator:latest
+          command:
+          - nginx-operator
+          imagePullPolicy: Always
+          env:
+            - name: WATCH_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: OPERATOR_NAME
+              value: "nginx-operator"
