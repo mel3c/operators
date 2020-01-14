@@ -3,7 +3,6 @@ module nginx-operator
 go 1.13
 
 require (
-	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/operator-framework/operator-sdk v0.13.1-0.20191220181623-ba68281353e5
 	github.com/spf13/pflag v1.0.5
 	k8s.io/api v0.0.0

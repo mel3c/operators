@@ -1,0 +1,7 @@
+apiVersion: daas.dreamxos.com/v1
+kind: RedisRestore
+metadata:
+  name: example-redisrestore
+spec:
+  # Add fields here
+  size: 3

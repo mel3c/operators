@@ -70,6 +70,9 @@ rules:
   - daas.dreamxos.com
   resources:
   - '*'
+  - redisbackups
+  - redisrestores
+  - redisschedules
   verbs:
   - create
   - delete

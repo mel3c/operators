@@ -1,0 +1,25 @@
+package resource
+
+import (
+	daasv1 "redis-operator/pkg/apis/daas/v1"
+
+	corev1 "k8s.io/api/core/v1"
+)
+
+func NewContainer(cr *daasv1.Redis) []corev1.Container {
+	containerPorts := []corev1.ContainerPort{}
+	for _, svcPort := range cr.Spec.Ports {
+		cport := corev1.ContainerPort{ContainerPort: svcPort.TargetPort.IntVal}
+		containerPorts = append(containerPorts, cport)
+	}
+
+	return []corev1.Container{
+		{
+			Name:            cr.Name,
+			Image:           cr.Spec.RedisImage,
+			Resources:       cr.Spec.Resources,
+			Ports:           containerPorts,
+			ImagePullPolicy: corev1.PullIfNotPresent,
+		},
+	}
+}

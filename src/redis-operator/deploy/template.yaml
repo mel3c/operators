@@ -1,0 +1,108 @@
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  name: redis.daas.dreamxos.com
+spec:
+  group: daas.dreamxos.com
+  version: v1
+  scope: Namespaced
+  names:
+    kind: Redis
+    listKind: RedisList
+    plural: redis
+    singular: redis
+---
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  name: redisbackups.daas.dreamxos.com
+spec:
+  group: daas.dreamxos.com
+  version: v1
+  scope: Namespaced
+  names:
+    kind: RedisBackup
+    listKind: RedisBackupList
+    plural: redisbackups
+    singular: redisbackup
+---
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  name: redisrestores.daas.dreamxos.com
+spec:
+  group: daas.dreamxos.com
+  names:
+  version: v1
+  scope: Namespaced
+    kind: RedisRestore
+    listKind: RedisRestoreList
+    plural: redisrestores
+    singular: redisrestore
+---
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  name: redisschedules.daas.dreamxos.com
+spec:
+  group: daas.dreamxos.com
+  version: v1
+  scope: Namespaced
+  names:
+    kind: RedisSchedule
+    listKind: RedisScheduleList
+    plural: redisschedules
+    singular: redisschedule
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: redis-operator
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: redis-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: redis-operator
+  namespace: kube-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-operator
+  namespace: kube-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: redis-operator
+  template:
+    metadata:
+      labels:
+        name: redis-operator
+    spec:
+      serviceAccountName: redis-operator
+      containers:
+        - name: redis-operator
+          image: gaozhenhai/redis-operator:latest
+          command:
+          - redis-operator
+          imagePullPolicy: Always
+          env:
+            - name: WATCH_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: OPERATOR_NAME
+              value: "redis-operator"
